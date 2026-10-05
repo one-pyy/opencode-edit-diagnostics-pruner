@@ -86,10 +86,10 @@ function scan(db, sessionID, directory, apply, report) {
   }
 }
 
-export function cleanHistory({ dbPath, sessionID, apply = false, sessionStopped = false, backupPath, noBackup = false,
-  backup = backupDatabase }) {
-  if (typeof dbPath !== 'string' || typeof sessionID !== 'string' || !sessionID) {
-    throw new Error('Explicit --db and --session are required');
+export function cleanHistory({ dbPath, sessionID, all = false, apply = false, sessionStopped = false, backupPath, noBackup = false,
+  backup = backupDatabase, onProgress }) {
+  if (typeof dbPath !== 'string' || (all ? sessionID !== undefined : typeof sessionID !== 'string' || !sessionID)) {
+    throw new Error('Explicit --db and exactly one of --session or --all are required');
   }
   if (apply && !sessionStopped) throw new Error('Stop the host/session first and pass --session-stopped');
   if (noBackup && !apply) throw new Error('--no-backup requires --apply');
@@ -99,22 +99,30 @@ export function cleanHistory({ dbPath, sessionID, apply = false, sessionStopped 
   let transaction = false;
   const report = { mode: apply ? 'apply' : 'preview', sessionID, partRows: 0, eventRows: 0,
     removedDiagnosticFiles: 0, removedBytes: 0, skippedRows: 0, activeParts: 0 };
+  if (all) { report.scope = 'all'; report.sessions = []; }
   try {
     db.exec('PRAGMA busy_timeout=5000');
     // Keep this same connection alive across backup: data_version detects other commits.
     const version = db.query('PRAGMA data_version').get().data_version;
     validateSchema(db);
-    const session = db.query('SELECT directory FROM session WHERE id=?').get(sessionID);
-    if (!session || typeof session.directory !== 'string') throw new Error('Session missing or invalid directory');
-    report.activeParts = preflight(db, sessionID);
-    if (apply && report.activeParts) throw new Error('Session has pending/running tool parts; finish or stop it before apply');
+    const sessions = all
+      ? db.query('SELECT id, directory FROM session ORDER BY id').all()
+      : [db.query('SELECT id, directory FROM session WHERE id=?').get(sessionID)];
+    if (sessions.some(session => !session || typeof session.directory !== 'string')) {
+      throw new Error('Session missing or invalid directory');
+    }
+    if (!all) {
+      report.activeParts = preflight(db, sessionID);
+      if (apply && report.activeParts) throw new Error('Session has pending/running tool parts; finish or stop it before apply');
+    }
     if (apply) {
       report.backupSkipped = noBackup;
       if (!noBackup) {
         const requested = backupPath ?? path.join(path.dirname(source),
           `${path.basename(source)}.pruner-${Date.now()}-${randomUUID()}.backup.sqlite`);
         report.backupPath = checkedBackupPath(source, requested);
-        backup(source, report.backupPath);
+        onProgress?.({ stage: 'backup', completed: 0, total: sessions.length });
+        backup(source, report.backupPath, { progress: Boolean(onProgress) });
       }
       db.exec('BEGIN IMMEDIATE');
       transaction = true;
@@ -125,9 +133,31 @@ export function cleanHistory({ dbPath, sessionID, apply = false, sessionStopped 
       db.exec('BEGIN');
       transaction = true;
     }
-    scan(db, sessionID, session.directory, apply, report);
+    let completed = 0;
+    onProgress?.({ stage: 'sessions', completed, total: sessions.length });
+    for (const session of sessions) {
+      if (!all) {
+        scan(db, session.id, session.directory, apply, report);
+        onProgress?.({ stage: 'sessions', completed: ++completed, total: sessions.length });
+        continue;
+      }
+      const item = { sessionID: session.id, partRows: 0, eventRows: 0, removedDiagnosticFiles: 0,
+        removedBytes: 0, skippedRows: 0, activeParts: preflight(db, session.id) };
+      if (apply && item.activeParts) item.status = 'deferred-active';
+      else {
+        scan(db, session.id, session.directory, apply, item);
+        item.status = item.partRows || item.eventRows ? (apply ? 'cleaned' : 'candidate') : 'unchanged';
+      }
+      report.sessions.push(item);
+      for (const key of ['partRows', 'eventRows', 'removedDiagnosticFiles', 'removedBytes', 'skippedRows', 'activeParts']) {
+        report[key] += item[key];
+      }
+      onProgress?.({ stage: 'sessions', completed: ++completed, total: sessions.length });
+    }
+    onProgress?.({ stage: 'commit', completed, total: sessions.length });
     db.exec('COMMIT');
     transaction = false;
+    onProgress?.({ stage: 'done', completed, total: sessions.length });
     return report;
   } finally {
     try { if (transaction) db.exec('ROLLBACK'); }

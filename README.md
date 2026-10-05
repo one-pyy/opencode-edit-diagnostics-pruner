@@ -33,6 +33,15 @@ Default mode opens the database read-only and produces a JSON report. It does no
 
 ## Apply with a full backup
 
+Use `--all` instead of `--session SESSION` to inspect every stored session. Apply creates one full backup and uses one transaction for the entire batch. Sessions with pending/running tool parts are deferred without modification and listed as `deferred-active`; preview still reports their potential cleanup. The two scope options are mutually exclusive. Keep hosts quiescent during execution; `--session-stopped` remains required for apply.
+
+```sh
+bun /opt/plugins/opencode-edit-diagnostics-pruner/history.mjs \
+  --db /var/tmp/synthetic-opencode.sqlite --all --progress
+```
+
+Add `--progress` for backup page counts, backup validation status and session progress. Terminals enable it automatically. Progress is written to stderr; redirect stdout to a JSON file to save the report. Noninteractive progress is throttled. The session progress bar reaches 100% before the final commit; success is reported only after commit completes.
+
 ```sh
 bun /opt/plugins/opencode-edit-diagnostics-pruner/history.mjs \
   --db /var/tmp/synthetic-opencode.sqlite --session ses_synthetic_example \

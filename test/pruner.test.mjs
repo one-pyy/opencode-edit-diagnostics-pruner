@@ -68,6 +68,61 @@ test('explicit no-backup skips backup and rejects conflicting options before wri
   } finally { f.close(); }
 });
 
+test('all-session preview and apply use one backup and defer active sessions', () => {
+  const f = fixture();
+  try {
+    f.db.run('INSERT INTO session VALUES (?, ?)', ['ses_active_synthetic', directory]);
+    const active = JSON.stringify({ type: 'tool', tool: 'bash', state: { status: 'running' } });
+    f.db.run('INSERT INTO part VALUES (?, ?, ?, 1, 2, ?)', ['active_tool', 'active_msg', 'ses_active_synthetic', active]);
+    const completed = JSON.stringify({ type: 'tool', tool: 'edit', state: state() });
+    f.db.run('INSERT INTO part VALUES (?, ?, ?, 1, 2, ?)', ['active_old', 'active_msg', 'ses_active_synthetic', completed]);
+    const preview = runCLI(['--db', f.file, '--all']);
+    expect(preview.status).toBe(0);
+    expect(JSON.parse(preview.stdout).partRows).toBe(5);
+    expect(f.db.query('SELECT data FROM part WHERE id=?').get('part_other').data).toContain('other.ts');
+    expect(runCLI(['--db', f.file, '--all', '--session', 'ses_synthetic']).status).not.toBe(0);
+    let backups = 0;
+    const report = cleanHistory({ dbPath: f.file, all: true, apply: true, sessionStopped: true,
+      backupPath: f.backup, backup: (source, target) => { backups++; backupDatabase(source, target); } });
+    expect(backups).toBe(1);
+    expect(report.partRows).toBe(4);
+    expect(report.eventRows).toBe(3);
+    expect(report.sessions.find(s => s.sessionID === 'ses_active_synthetic').status).toBe('deferred-active');
+    expect(f.db.query('SELECT data FROM part WHERE id=?').get('active_old').data).toBe(completed);
+    expect(f.db.query('SELECT data FROM part WHERE id=?').get('active_tool').data).toBe(active);
+    const post = cleanHistory({ dbPath: f.file, all: true });
+    expect(post.partRows).toBe(1);
+    expect(post.eventRows).toBe(0);
+    const saved = new Database(f.backup, { readonly: true });
+    try { expect(saved.query('SELECT data FROM part WHERE id=?').get('part_other').data).toContain('other.ts'); }
+    finally { saved.close(); }
+  } finally { f.close(); }
+});
+
+test('all-session transaction rolls back earlier sessions if a later session fails', () => {
+  const f = fixture();
+  try {
+    const before = f.db.query('SELECT * FROM part ORDER BY id').all();
+    f.db.exec("CREATE TRIGGER fail_later BEFORE UPDATE ON event BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;");
+    expect(() => cleanHistory({ dbPath: f.file, all: true, apply: true, sessionStopped: true,
+      noBackup: true })).toThrow();
+    expect(f.db.query('SELECT * FROM part ORDER BY id').all()).toEqual(before);
+  } finally { f.close(); }
+});
+
+test('all-session progress stays on stderr while stdout remains a JSON report', () => {
+  const f = fixture();
+  try {
+    const result = runCLI(['--db', f.file, '--all', '--apply', '--session-stopped', '--backup', f.backup, '--progress']);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).scope).toBe('all');
+    expect(result.stderr).toContain('Backup');
+    expect(result.stderr).toContain('quick_check');
+    expect(result.stderr).toContain('2/2 100.0%');
+    expect(result.stderr).toContain('Complete.');
+  } finally { f.close(); }
+});
+
 test('shared filter keeps edited paths, unknown keys, output and unrelated metadata', () => {
   for (const tool of ['edit', 'write', 'apply_patch']) {
     const original = state(tool);

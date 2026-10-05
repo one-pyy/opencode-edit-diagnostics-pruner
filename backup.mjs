@@ -17,11 +17,12 @@ export function checkedBackupPath(source, requested) {
   return canonical;
 }
 
-export function backupDatabase(source, requested) {
+export function backupDatabase(source, requested, { progress = false } = {}) {
   const target = checkedBackupPath(source, requested);
   // Python exclusively creates the destination: existing backups are never overwritten.
-  execFileSync('python3', [fileURLToPath(new URL('./backup.py', import.meta.url)), source, target],
-    { stdio: ['ignore', 'ignore', 'pipe'], timeout: 0 });
+  execFileSync('python3', [fileURLToPath(new URL('./backup.py', import.meta.url)), source, target,
+    ...(progress ? ['--progress'] : [])],
+    { stdio: ['ignore', 'ignore', progress ? 'inherit' : 'pipe'], timeout: 0 });
   if (!statSync(target).isFile() || (statSync(target).mode & 0o777) !== 0o600) {
     throw new Error('Backup file or permissions invalid');
   }

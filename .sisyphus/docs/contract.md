@@ -20,7 +20,7 @@
 
 ## 历史数据结构
 
-`opencode-edit-diagnostics-pruner/history.mjs` 必须显式传入 `--db` 和 `--session`。`opencode-edit-diagnostics-pruner/history-db.mjs` 验证实际 table 及以下列存在，缺失即拒绝：
+`opencode-edit-diagnostics-pruner/history.mjs` 必须显式传入 `--db`，范围使用 `--session` 或 `--all`，两者互斥。`--all` 枚举全部 session，使用各自 directory 和相同过滤规则；apply 只备份一次，所有实际修改在一个事务中。写锁内发现 pending/running 工具的会话完整跳过，报告 `deferred-active`；preview 仍统计其可清理内容。任何实际修改错误回滚整批。`opencode-edit-diagnostics-pruner/history-db.mjs` 验证实际 table 及以下列存在，缺失即拒绝：
 
 | 表 | 必需列 | 会话范围 |
 | --- | --- | --- |
@@ -47,5 +47,7 @@ apply 默认在写入前通过 `opencode-edit-diagnostics-pruner/backup.py` 使�
 报告显示 partRows、eventRows、跨存储副本的 removedDiagnosticFiles、skippedRows、activeParts 与 removedBytes（原 JSON 与新 JSON 的 UTF-8 字节净差，可能受序列化格式影响）。成功 apply 返回 backupPath。没有自动 VACUUM，也没有磁盘回收保证。
 
 ## 验收
+
+`--progress` 或交互终端启用进度显示：备份页数、quick_check 阶段、已完成会话数及提交阶段写入 stderr。stdout 始终只输出最终 JSON 报告。非交互会话进度按每 100 个会话及首尾节流输出；会话 100% 不等于事务提交成功，最终 done 在 COMMIT 后输出。
 
 `opencode-edit-diagnostics-pruner/test/pruner.test.mjs` 只创建临时合成数据库；禁止使用真实会话或其副本验收。测试覆盖 hook 输出保留、相对/绝对路径、移动、保守跳过、part/event 完成副本一致性、完整 WAL 备份与恢复、状态拒绝、schema 拒绝、并发提交检测、行冲突与回滚。使用 `bun test test/` 和 `npm run check` 验证；独立审查与实际宿主接入由 owner 在授权范围内完成。
