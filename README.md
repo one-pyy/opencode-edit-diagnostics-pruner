@@ -16,7 +16,7 @@ Place this directory at a permanent location. Add its `plugin.mjs` file as the *
 
 Replace the example location with your actual installation path, then restart OpenCode. No dependencies or build step are needed for the plugin; it is portable Node ESM. Node 22.22.1 was used for compatibility checks. Historical cleanup additionally requires Bun (tested with 1.3.11) and Python 3 with standard-library SQLite.
 
-The `tool.execute.after` interface and apply_patch metadata shape were checked against OpenCode 1.18.34. This hook changes final results only. Running `ctx.metadata` updates and existing history remain untouched. Other plugins that run later may add diagnostics again. This project makes no CPU or RSS reduction guarantee.
+The `tool.execute.after` interface and apply_patch metadata shape were checked against OpenCode 1.18.34. This hook changes final results only. Running `ctx.metadata` updates and existing history remain untouched. Other plugins that run later may add diagnostics again. It keeps the persisted diagnostics payload small so long sessions stay lean; actual memory and CPU savings depend on session length, the plugin chain, and host behavior, and no specific figure is guaranteed.
 
 ## Preview one historical session
 
