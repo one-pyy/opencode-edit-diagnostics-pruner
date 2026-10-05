@@ -58,7 +58,11 @@ Reports count changed `partRows`, changed `eventRows`, removed diagnostic file e
 
 For rollback, keep the host stopped and restore the complete backup through SQLite's backup API into the intended database. Do not copy a lone database file over a live WAL database or mix old WAL/SHM files with a restored database. This tool intentionally provides cleanup only; it does not automate restoration of a real host database.
 
+Keep the backup after a successful cleanup. It is your only recovery point for the pruned history, and its size does not affect how lean new sessions stay: the backup is a static snapshot outside the live database, and the plugin keeps pruning diagnostics on every new edit regardless of whether that snapshot exists.
+
 ## Apply without a new backup
+
+Skipping the backup before cleanup is **not recommended**: without a recovery copy, a mistaken run or unexpected data shape has no rollback path. Keep it as an escape hatch for cases where you already hold a verified backup elsewhere and have confirmed free disk space is the only blocker.
 
 To explicitly skip the automatic full backup, use `--apply --session-stopped --no-backup`. The host must still be stopped; transaction and concurrent-commit checks remain enabled. This mode creates no recovery copy. `--no-backup` requires apply and conflicts with `--backup`. The report contains `backupSkipped: true` and no `backupPath`. Default apply still creates and validates a full backup.
 
