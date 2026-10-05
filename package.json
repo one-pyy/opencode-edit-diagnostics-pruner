@@ -1,0 +1,11 @@
+{
+  "name": "opencode-edit-diagnostics-pruner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Keep edit-tool diagnostics only for files edited by that call",
+  "scripts": {
+    "test": "bun test test/",
+    "check": "node --check filter.mjs && node --check plugin.mjs && node --check history.mjs && node --check history-db.mjs && node --check backup.mjs"
+  }
+}
