@@ -49,7 +49,17 @@ Reports count changed `partRows`, changed `eventRows`, removed diagnostic file e
 
 For rollback, keep the host stopped and restore the complete backup through SQLite's backup API into the intended database. Do not copy a lone database file over a live WAL database or mix old WAL/SHM files with a restored database. This tool intentionally provides cleanup only; it does not automate restoration of a real host database.
 
-## Boundaries
+## Apply without a new backup
+
+To explicitly skip the automatic full backup, use `--apply --session-stopped --no-backup`. The host must still be stopped; transaction and concurrent-commit checks remain enabled. This mode creates no recovery copy. `--no-backup` requires apply and conflicts with `--backup`. The report contains `backupSkipped: true` and no `backupPath`. Default apply still creates and validates a full backup.
+
+```sh
+bun /opt/plugins/opencode-edit-diagnostics-pruner/history.mjs \
+  --db /var/tmp/synthetic-opencode.sqlite --session ses_synthetic_example \
+  --apply --session-stopped --no-backup
+```
+
+## Filtering scope
 
 Only `state.metadata.diagnostics` is filtered in historical tool parts and completed `message.part.updated.1` event snapshots of the exact session. Event IDs, sequence numbers, types, envelope fields, tool input/output, and provider metadata are preserved. Historical running event snapshots remain intact; completed copies are processed individually so replaying them uses the filtered final results.
 

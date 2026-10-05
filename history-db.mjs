@@ -86,12 +86,14 @@ function scan(db, sessionID, directory, apply, report) {
   }
 }
 
-export function cleanHistory({ dbPath, sessionID, apply = false, sessionStopped = false, backupPath,
+export function cleanHistory({ dbPath, sessionID, apply = false, sessionStopped = false, backupPath, noBackup = false,
   backup = backupDatabase }) {
   if (typeof dbPath !== 'string' || typeof sessionID !== 'string' || !sessionID) {
     throw new Error('Explicit --db and --session are required');
   }
   if (apply && !sessionStopped) throw new Error('Stop the host/session first and pass --session-stopped');
+  if (noBackup && !apply) throw new Error('--no-backup requires --apply');
+  if (noBackup && backupPath) throw new Error('--no-backup conflicts with --backup');
   const source = realpathSync(dbPath);
   const db = new Database(source, { readonly: !apply, create: false, strict: true });
   let transaction = false;
@@ -107,14 +109,17 @@ export function cleanHistory({ dbPath, sessionID, apply = false, sessionStopped 
     report.activeParts = preflight(db, sessionID);
     if (apply && report.activeParts) throw new Error('Session has pending/running tool parts; finish or stop it before apply');
     if (apply) {
-      const requested = backupPath ?? path.join(path.dirname(source),
-        `${path.basename(source)}.pruner-${Date.now()}-${randomUUID()}.backup.sqlite`);
-      report.backupPath = checkedBackupPath(source, requested);
-      backup(source, report.backupPath);
+      report.backupSkipped = noBackup;
+      if (!noBackup) {
+        const requested = backupPath ?? path.join(path.dirname(source),
+          `${path.basename(source)}.pruner-${Date.now()}-${randomUUID()}.backup.sqlite`);
+        report.backupPath = checkedBackupPath(source, requested);
+        backup(source, report.backupPath);
+      }
       db.exec('BEGIN IMMEDIATE');
       transaction = true;
       if (db.query('PRAGMA data_version').get().data_version !== version) {
-        throw new Error('Source database changed during backup; no cleanup applied. Stop host and retry with a new backup');
+        throw new Error('Source database changed during preflight; no cleanup applied. Stop host and retry');
       }
     } else {
       db.exec('BEGIN');

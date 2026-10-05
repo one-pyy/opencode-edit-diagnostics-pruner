@@ -38,7 +38,9 @@ part.data 是不含外部 ID 的 JSON part，若包含身份字段则必须与�
 
 preview 是默认模式，以 readonly 连接读取；apply 必须指定 `--apply --session-stopped`。操作者必须停止 OpenCode 宿主，flag 仅声明已执行该前提。工具不能独立证明当前没有未来发送，也不自动停止服务。
 
-apply 在写入前通过 `opencode-edit-diagnostics-pruner/backup.py` 使用 Python sqlite3 online backup 创建整个数据库副本，包含已提交 WAL；文件独占创建、权限 0600、quick_check 必须返回 ok。备份目录必须存在，目标必须在插件仓库之外。缺省备份名在源文件旁生成 UUID 唯一路径；已存在目标不覆盖。
+apply 默认在写入前通过 `opencode-edit-diagnostics-pruner/backup.py` 使用 Python sqlite3 online backup 创建整个数据库副本，包含已提交 WAL；文件独占创建、权限 0600、quick_check 必须返回 ok。备份目录必须存在，目标必须在插件仓库之外。缺省备份名在源文件旁生成 UUID 唯一路径；已存在目标不覆盖。
+
+显式 `--no-backup` 仅用于 apply，与 `--backup` 冲突；跳过备份组件且不生成恢复副本，报告 `backupSkipped: true`，不包含 backupPath。停止宿主、preflight、写锁、data_version 检查及单事务回滚保持不变。默认 apply 报告 `backupSkipped: false`。
 
 同一源连接保持贯穿 preflight、backup 和 BEGIN IMMEDIATE。写锁获取后复查 PRAGMA data_version，检测期间任意外部 commit 即中止，保留已成功备份。正常 SQLite 写入被锁隔离；part 与 event 更新在同一个事务内，任何冲突或错误均回滚。文件替换、绕过 SQLite 锁、CLI 结束后继续发送均不在保护范围。
 

@@ -48,6 +48,26 @@ function runCLI(args) {
   return spawnSync(process.execPath, [join(import.meta.dir, '..', 'history.mjs'), ...args], { encoding: 'utf8' });
 }
 
+test('explicit no-backup skips backup and rejects conflicting options before writes', () => {
+  const f = fixture();
+  try {
+    const before = f.db.query('SELECT * FROM part ORDER BY id').all();
+    expect(runCLI(['--db', f.file, '--session', 'ses_synthetic', '--no-backup']).status).not.toBe(0);
+    expect(runCLI(['--db', f.file, '--session', 'ses_synthetic', '--apply', '--session-stopped',
+      '--no-backup', '--backup', f.backup]).status).not.toBe(0);
+    expect(f.db.query('SELECT * FROM part ORDER BY id').all()).toEqual(before);
+    const report = cleanHistory({ dbPath: f.file, sessionID: 'ses_synthetic', apply: true,
+      sessionStopped: true, noBackup: true, backup: () => { throw new Error('must not call backup'); } });
+    expect(report.backupSkipped).toBe(true);
+    expect(report.backupPath).toBeUndefined();
+    expect(report.partRows).toBe(3);
+    expect(report.eventRows).toBe(3);
+    const result = runCLI(['--db', f.file, '--session', 'ses_synthetic', '--apply', '--session-stopped', '--no-backup']);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).backupSkipped).toBe(true);
+  } finally { f.close(); }
+});
+
 test('shared filter keeps edited paths, unknown keys, output and unrelated metadata', () => {
   for (const tool of ['edit', 'write', 'apply_patch']) {
     const original = state(tool);
